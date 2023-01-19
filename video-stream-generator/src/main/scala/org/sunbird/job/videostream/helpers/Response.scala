@@ -1,16 +1,22 @@
 package org.sunbird.job.videostream.helpers
 
 
-import java.util.UUID
+import java.text.SimpleDateFormat
+import java.util.{Date, TimeZone, UUID}
+import com.google.cloud.video.transcoder.v1.Job
+
 import scala.collection.immutable.HashMap
 import org.apache.commons.lang3.StringUtils
+import org.slf4j.LoggerFactory
 import org.sunbird.job.util.{HTTPResponse, JSONUtil}
 
 
 object Response {
 
-  lazy val MEDIA_SERVICE_TYPE = ""
-//  val MEDIA_SERVICE_TYPE = AppConfig.getConfig("media_service_type")
+  private[this] val logger = LoggerFactory.getLogger(this.getClass)
+
+  val formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
+  formatter.setTimeZone(TimeZone.getTimeZone("UTC"))
 
   def getResponse(response: HTTPResponse): MediaResponse = {
     var result: Map[String, AnyRef] = new HashMap[String, AnyRef]
@@ -23,7 +29,7 @@ object Response {
       case e: UnsupportedOperationException => e.printStackTrace()
       case e: Exception => e.printStackTrace()
     }
-
+    logger.info("Inside the getResponse method : ")
     response.status match {
       case 200 => getSuccessResponse(result)
       case 201 => getSuccessResponse(result)
@@ -53,6 +59,7 @@ object Response {
       "err" -> errorCode,
       "errMsg" -> errorMessage
     )
+    logger.info("Inside the getFailureResponse method : ")
     MediaResponse(UUID.randomUUID().toString, System.currentTimeMillis().toString, params, respCode, result)
   }
 
@@ -63,4 +70,24 @@ object Response {
   def getListJobResult(response: MediaResponse): Map[String, AnyRef] = {
     null
   }
+
+  def getGCPResponse(job: Job): MediaResponse = {
+    if (null != job) {
+      val jobId = job.getName.split("jobs/")(1)
+      val status = job.getState.toString
+      val submittedOn = formatter.format(new Date(job.getCreateTime.getSeconds * 1000))
+      val result = Map("job" -> Map("id" -> jobId, "status" -> status, "submittedOn" -> submittedOn))
+      logger.info("result is "+result)
+      job.getState.getNumber match {
+        case 1 | 2 | 3 => getSuccessResponse(result)
+        case 0 | -1 => getFailureResponse(Map("error" -> Map("status" -> status, "errorCode" -> job.getError.getCode.toString, "errorMessage" -> job.getError.getMessage)), "SERVER_ERROR", "Internal Server Error. Please Try Again Later!")
+        case 4 => {
+          val resultWithError = Map("job" -> Map("id" -> jobId, "status" -> status, "submittedOn" -> submittedOn, "error" -> Map("errorCode" -> job.getError.getCode.toString, "errorMessage" -> job.getError.getMessage)))
+          getSuccessResponse(resultWithError)
+        }
+        case _ => getFailureResponse(Map("error" -> Map("errorCode" -> "SERVER_ERROR", "errorMessage" -> "Unable to get valid response from server.")), "SERVER_ERROR", "Internal Server Error. Please Try Again Later!")
+      }
+    } else getFailureResponse(Map("error" -> Map("errorCode" -> "SERVER_ERROR", "errorMessage" -> "Unable to get valid response from server.")), "SERVER_ERROR", "Internal Server Error. Please Try Again Later!")
+  }
+
 }

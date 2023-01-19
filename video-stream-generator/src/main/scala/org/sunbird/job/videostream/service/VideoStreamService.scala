@@ -64,7 +64,7 @@ class VideoStreamService(implicit config: VideoStreamGeneratorConfig, httpUtil: 
             } else {
               null
             }
-          } else if(jobStatus.equalsIgnoreCase("ERROR")){
+          } else if(config.jobFailStatus.contains(jobStatus)){
             val errMessage = job.getOrElse("error", Map()).asInstanceOf[Map[String, AnyRef]].getOrElse("errorMessage", "No error message").asInstanceOf[String]
             StreamingStage(jobRequest.request_id, jobRequest.client_key, jobRequest.job_id.get, stageName, jobStatus, "FAILED", iteration + 1, errMessage)
           } else {
@@ -102,7 +102,7 @@ class VideoStreamService(implicit config: VideoStreamGeneratorConfig, httpUtil: 
     val response:MediaResponse = mediaService.submitJob(mediaRequest)
     val stageName = "STREAMING_JOB_SUBMISSION"
     var streamStage:Option[StreamingStage] = None
-
+    logger.info("inside the submitStreamJob: " )
     if (response.responseCode.equals("OK")) {
       val jobId = response.result.getOrElse("job", Map()).asInstanceOf[Map[String, AnyRef]].getOrElse("id","").asInstanceOf[String];
       val jobStatus = response.result.getOrElse("job", Map()).asInstanceOf[Map[String, AnyRef]].getOrElse("status","").asInstanceOf[String];
@@ -178,6 +178,7 @@ class VideoStreamService(implicit config: VideoStreamGeneratorConfig, httpUtil: 
       .value("job_name", jobRequest.job_name.get)
 
     val result = cassandraUtil.session.execute(query)
+    logger.info("result is "+result)
     result.wasApplied()
   }
 
